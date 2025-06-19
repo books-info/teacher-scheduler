@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Teacher Scheduling App</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background-color: #f8f9fa; padding-top: 20px; }
+    .status-free { color: green; font-weight: bold; }
+    .status-busy { color: red; font-weight: bold; }
+    .dropdown-content { 
+      display: none;
+      position: absolute;
+      background: white;
+      border: 1px solid #ddd;
+      padding: 10px;
+      z-index: 1000;
+      max-height: 300px;
+      overflow-y: auto;
+      width: 100%;
+    }
+    .show-dropdown { display: block; }
+    #daysCheckboxes label { display: inline-block; margin-right: 15px; }
+    .batch-actions { display: flex; gap: 5px; }
+    .alert-position {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1100;
+    }
+    .page-content { display: none; }
+    .active-batch { background-color: #e8f5e9; }
+    .inactive-batch { background-color: #ffebee; }
+    .conflict-warning { border-left: 5px solid #ff9800; padding-left: 10px; }
+    .switch { position: relative; display: inline-block; width: 60px; height: 34px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 34px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 26px;
+      width: 26px;
+      left: 4px;
+      bottom: 4px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+    input:checked + .slider { background-color: #28a745; }
+    input:checked + .slider:before { transform: translateX(26px); }
+    
+    /* Responsive dashboard */
+    @media (max-width: 768px) {
+      .dashboard-table th, 
+      .dashboard-table td {
+        padding: 0.3rem;
+        font-size: 0.9rem;
+      }
+      .dashboard-table thead {
+        display: none;
+      }
+      .dashboard-table tr {
+        display: block;
+        margin-bottom: 1rem;
+        border: 1px solid #dee2e6;
+      }
+      .dashboard-table td {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid #dee2e6;
+      }
+      .dashboard-table td::before {
+        content: attr(data-label);
+        font-weight: bold;
+        padding-right: 1rem;
+      }
+    }
+    
+    /* Improved batch form */
+    .selected-teachers {
+      margin-top: 10px;
+      padding: 5px;
+      background: #f8f9fa;
+      border-radius: 5px;
+    }
+    .selected-teacher {
+      display: inline-block;
+      background: #e9ecef;
+      padding: 2px 8px;
+      margin: 2px;
+      border-radius: 10px;
+      font-size: 0.9em;
+    }
+    .selected-days {
+      margin-top: 10px;
+    }
+    .selected-day {
+      display: inline-block;
+      background: #e9ecef;
+      padding: 2px 8px;
+      margin: 2px;
+      border-radius: 10px;
+      font-size: 0.9em;
+    }
+  </style>
+</head>
+<body>
+  <div id="alertContainer" class="alert-position"></div>
+
+  <div class="container">
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+      <div class="container-fluid">
+        <a class="navbar-brand" href="#" onclick="showPage('dashboard')">HEXA'S App</a>
+        <div class="collapse navbar-collapse">
+          <ul class="navbar-nav me-auto">
+            <li class="nav-item"><a class="nav-link" href="#" onclick="showPage('dashboard')">Dashboard</a></li>
+            <li class="nav-item"><a class="nav-link" href="#" onclick="showPage('teachers')">Teachers</a></li>
+            <li class="nav-item"><a class="nav-link" href="#" onclick="showPage('courses')">Courses</a></li>
+            <li class="nav-item"><a class="nav-link" href="#" onclick="showPage('batches')">Batches</a></li>
+            <li class="nav-item"><a class="nav-link" href="#" onclick="showPage('timeAndPlace')">Time & Place</a></li>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+
+    <!-- Dashboard Page -->
+    <div id="dashboard" class="page-content">
+      <div class="card mb-4">
+        <div class="card-body">
+          <h3>Dashboard</h3>
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Day:</label>
+              <select id="filterDay" class="form-select">
+                <option value="Monday">Monday</option>
+                <option value="Tuesday">Tuesday</option>
+                <option value="Wednesday">Wednesday</option>
+                <option value="Thursday">Thursday</option>
+                <option value="Friday">Friday</option>
+                <option value="Saturday">Saturday</option>
+                <option value="Sunday">Sunday</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Timeframe:</label>
+              <select id="filterTimeframe" class="form-select"></select>
+            </div>
+          </div>
+          <button onclick="loadDashboard()" class="btn btn-primary">Generate Schedule</button>
+        </div>
+      </div>
+      <div id="dashboardContent"></div>
+    </div>
+
+    <!-- Teachers Page -->
+    <div id="teachers" class="page-content">
+      <div class="card mb-4">
+        <div class="card-body">
+          <h3>Manage Teachers</h3>
+          <div class="mb-3">
+            <label class="form-label">Name:</label>
+            <input id="teacherName" class="form-control" placeholder="Full Name">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Phone:</label>
+            <input id="teacherPhone" class="form-control" placeholder="Phone Number">
+          </div>
+          <button onclick="addTeacher()" class="btn btn-success">Add Teacher</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <h4>Teacher List</h4>
+          <ul id="teacherList" class="list-group"></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Courses Page -->
+    <div id="courses" class="page-content">
+      <div class="card mb-4">
+        <div class="card-body">
+          <h3>Manage Courses</h3>
+          <div class="mb-3">
+            <label class="form-label">Course Name:</label>
+            <input id="courseName" class="form-control" placeholder="Course Name">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Description:</label>
+            <textarea id="courseDesc" class="form-control" placeholder="Description"></textarea>
+          </div>
+          <button onclick="addCourse()" class="btn btn-primary">Add Course</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <h4>Course List</h4>
+          <ul id="courseList" class="list-group"></ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- Time & Place Page -->
+    <div id="timeAndPlace" class="page-content">
+      <div class="row">
+        <div class="col-md-6">
+          <div class="card mb-4">
+            <div class="card-body">
+              <h3>Timeframes</h3>
+              <div class="row mb-3">
+                <div class="col-md-6">
+                  <label class="form-label">Start Time:</label>
+                  <div class="input-group">
+                    <input type="time" id="timeframeStart" class="form-control" step="900">
+                    <select class="form-select" id="timeframeStartPeriod" style="max-width: 80px;">
+                      <option value="AM">AM</option>
+                      <option value="PM">PM</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="col-md-6">
+                  <label class="form-label">End Time:</label>
+                  <div class="input-group">
+                    <input type="time" id="timeframeEnd" class="form-control" step="900">
+                    <select class="form-select" id="timeframeEndPeriod" style="max-width: 80px;">
+                      <option value="AM">AM</option>
+                      <option value="PM">PM</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <button onclick="addTimeframe()" class="btn btn-info">Add Timeframe</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-body">
+              <h4>Timeframe List</h4>
+              <ul id="timeframeList" class="list-group"></ul>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card mb-4">
+            <div class="card-body">
+              <h3>Rooms</h3>
+              <div class="mb-3">
+                <input id="newRoom" class="form-control" placeholder="Room Number">
+              </div>
+              <button onclick="addRoom()" class="btn btn-info">Add Room</button>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-body">
+              <h4>Room List</h4>
+              <ul id="roomList" class="list-group"></ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Batches Page -->
+    <div id="batches" class="page-content">
+      <div class="card mb-4">
+        <div class="card-body">
+          <h3>Batch Management</h3>
+          <div id="conflictAlert" class="alert alert-warning d-none"></div>
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Course:</label>
+              <select id="batchCourse" class="form-select"></select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Timeframe:</label>
+              <select id="batchTimeframe" class="form-select"></select>
+            </div>
+          </div>
+          <div class="row mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Room:</label>
+              <select id="batchRoom" class="form-select"></select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Batch Number:</label>
+              <input id="batchNumber" class="form-control" placeholder="Batch #">
+            </div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Days:</label>
+            <div id="daysCheckboxes">
+              <label><input type="checkbox" value="Monday" onchange="updateSelectedDays()"> Monday</label>
+              <label><input type="checkbox" value="Tuesday" onchange="updateSelectedDays()"> Tuesday</label>
+              <label><input type="checkbox" value="Wednesday" onchange="updateSelectedDays()"> Wednesday</label>
+              <label><input type="checkbox" value="Thursday" onchange="updateSelectedDays()"> Thursday</label>
+              <label><input type="checkbox" value="Friday" onchange="updateSelectedDays()"> Friday</label>
+              <label><input type="checkbox" value="Saturday" onchange="updateSelectedDays()"> Saturday</label>
+              <label><input type="checkbox" value="Sunday" onchange="updateSelectedDays()"> Sunday</label>
+            </div>
+            <div id="selectedDays" class="selected-days"></div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Teachers:</label>
+            <div class="dropdown-teachers">
+              <button id="teacherDropdownBtn" class="btn btn-outline-secondary dropdown-toggle w-100" 
+                      type="button" onclick="toggleTeacherDropdown(event)">
+                Select Teachers
+              </button>
+              <div id="teacherDropdownContent" class="dropdown-content"></div>
+            </div>
+            <div id="selectedTeachers" class="selected-teachers"></div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Status:</label>
+            <label class="switch">
+              <input type="checkbox" id="batchActive" checked>
+              <span class="slider"></span>
+            </label>
+            <span id="batchStatusText">Active</span>
+          </div>
+          <button onclick="addOrUpdateBatch()" class="btn btn-warning" id="batchActionButton">
+            Create Batch
+          </button>
+          <button onclick="resetBatchForm()" class="btn btn-secondary">Cancel</button>
+          <input type="hidden" id="editingBatchId">
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-body">
+          <h4>Batch List</h4>
+          <ul id="batchList" class="list-group"></ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ========== CONFIGURATION ==========
+    const API_BASE_URL = window.location.origin;
+    let editingBatchId = null;
+
+    // ========== UTILITY FUNCTIONS ==========
+    function showAlert(type, message, duration=5000) {
+      const alert = document.createElement('div');
+      alert.className = `alert alert-${type} alert-dismissible fade show`;
+      alert.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      `;
+      document.getElementById('alertContainer').appendChild(alert);
+      setTimeout(() => alert.remove(), duration);
+    }
+
+    async function handleApiCall(endpoint, method='GET', data=null) {
+      try {
+        const options = {
+          method,
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin'
+        };
+        if (data) options.body = JSON.stringify(data);
+
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, options);
+        
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+
+        return await response.json();
+      } catch (error) {
+        console.error(`API Error (${method} ${endpoint}):`, error);
+        showAlert('danger', `Operation failed: ${error.message}`);
+        throw error;
+      }
+    }
+
+    function showPage(pageId) {
+      document.querySelectorAll('.page-content').forEach(el => {
+        el.style.display = 'none';
+      });
+      document.getElementById(pageId).style.display = 'block';
+      
+      // Load data when page is shown
+      switch(pageId) {
+        case 'teachers': loadTeachers(); break;
+        case 'courses': loadCourses(); break;
+        case 'timeAndPlace': 
+          loadTimeframes(); 
+          loadRooms(); 
+          break;
+        case 'batches': 
+          loadBatchFormDropdowns(); 
+          loadBatches(); 
+          break;
+        case 'dashboard': 
+          loadTimeframeDropdown(); 
+          break;
+      }
+    }
+
+    function toggleTeacherDropdown(e) {
+      e.stopPropagation();
+      document.getElementById('teacherDropdownContent').classList.toggle('show-dropdown');
+      updateSelectedTeachers();
+    }
+
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', () => {
+      document.getElementById('teacherDropdownContent').classList.remove('show-dropdown');
+    });
+
+    // Toggle switch handler
+    document.getElementById('batchActive').addEventListener('change', function() {
+      document.getElementById('batchStatusText').textContent = this.checked ? 'Active' : 'Inactive';
+    });
+
+    // ========== TEACHER MANAGEMENT ==========
+    async function addTeacher() {
+      const name = document.getElementById('teacherName').value.trim();
+      const phone = document.getElementById('teacherPhone').value.trim();
+      
+      if (!name || !phone) {
+        showAlert('warning', 'Please fill all teacher fields');
+        return;
+      }
+
+      try {
+        await handleApiCall('/api/teachers', 'POST', { name, phone });
+        document.getElementById('teacherName').value = '';
+        document.getElementById('teacherPhone').value = '';
+        loadTeachers();
+        showAlert('success', 'Teacher added successfully');
+      } catch (error) {
+        // Error already handled in handleApiCall
+      }
+    }
+
+    async function loadTeachers() {
+      try {
+        const teachers = await handleApiCall('/api/teachers');
+        const list = document.getElementById('teacherList');
+        list.innerHTML = teachers.map(teacher => `
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            ${teacher.name} (${teacher.phone})
+            <button class="btn btn-sm btn-danger" onclick="deleteTeacher(${teacher.id})">
+              Delete
+            </button>
+          </li>
+        `).join('');
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    async function deleteTeacher(id) {
+      if (!confirm('Are you sure you want to delete this teacher?')) return;
+      
+      try {
+        await handleApiCall(`/api/teachers/${id}`, 'DELETE');
+        loadTeachers();
+        showAlert('success', 'Teacher deleted successfully');
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    // ========== COURSE MANAGEMENT ==========
+    async function addCourse() {
+      const name = document.getElementById('courseName').value.trim();
+      const description = document.getElementById('courseDesc').value.trim();
+      
+      if (!name) {
+        showAlert('warning', 'Course name is required');
+        return;
+      }
+
+      try {
+        await handleApiCall('/api/courses', 'POST', { name, description });
+        document.getElementById('courseName').value = '';
+        document.getElementById('courseDesc').value = '';
+        loadCourses();
+        showAlert('success', 'Course added successfully');
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    async function loadCourses() {
+      try {
+        const courses = await handleApiCall('/api/courses');
+        const list = document.getElementById('courseList');
+        list.innerHTML = courses.map(course => `
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <div>
+              <strong>${course.name}</strong>
+              ${course.description ? `<br><small>${course.description}</small>` : ''}
+            </div>
+            <div>
+              <button class="btn btn-sm btn-danger" onclick="deleteCourse(${course.id})">
+                Delete
+              </button>
+            </div>
+          </li>
+        `).join('');
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    async function deleteCourse(id) {
+      if (!confirm('Are you sure you want to delete this course?')) return;
+      
+      try {
+        await handleApiCall(`/api/courses/${id}`, 'DELETE');
+        loadCourses();
+        showAlert('success', 'Course deleted successfully');
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    // ========== TIMEFRAME & ROOM MANAGEMENT ==========
+    function convertTo24Hour(time, period) {
+      if (!time) return '';
+      
+      let [hours, minutes] = time.split(':');
+      hours = parseInt(hours);
+      
+      if (period === 'PM' && hours < 12) {
+        hours += 12;
+      } else if (period === 'AM' && hours === 12) {
+        hours = 0;
+      }
+      
+      return `${hours.toString().padStart(2, '0')}:${minutes}`;
+    }
+
+    async function addTimeframe() {
+      const startTime = document.getElementById('timeframeStart').value;
+      const startPeriod = document.getElementById('timeframeStartPeriod').value;
+      const endTime = document.getElementById('timeframeEnd').value;
+      const endPeriod = document.getElementById('timeframeEndPeriod').value;
+      
+      const start24 = convertTo24Hour(startTime, startPeriod);
+      const end24 = convertTo24Hour(endTime, endPeriod);
+      
+      if (!start24 || !end24) {
+        showAlert('warning', 'Please enter both start and end times');
+        return;
+      }
+
+      try {
+        await handleApiCall('/api/timeframes', 'POST', { 
+          start_time: start24, 
+          end_time: end24 
+        });
+        document.getElementById('timeframeStart').value = '';
+        document.getElementById('timeframeEnd').value = '';
+        loadTimeframes();
+        showAlert('success', 'Timeframe added successfully');
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    async function loadTimeframes() {
+      try {
+        const timeframes = await handleApiCall('/api/timeframes');
+        const list = document.getElementById('timeframeList');
+        list.innerHTML = timeframes.map(tf => `
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            ${tf.timeframe}
+            <button class="btn btn-sm btn-danger" onclick="deleteTimeframe(${tf.id})">
+              Delete
+            </button>
+          </li>
+        `).join('');
+        
+        // Also load in timeframe dropdown for dashboard
+        const dashSelect = document.getElementById('filterTimeframe');
+        dashSelect.innerHTML = timeframes.map(tf => 
+          `<option value="${tf.id}">${tf.timeframe}</option>`
+        ).join('');
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    async function deleteTimeframe(id) {
+      if (!confirm('Are you sure you want to delete this timeframe?')) return;
+      
+      try {
+        await handleApiCall(`/api/timeframes/${id}`, 'DELETE');
+        loadTimeframes();
+        showAlert('success', 'Timeframe deleted successfully');
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    async function addRoom() {
+      const roomNumber = document.getElementById('newRoom').value.trim();
+      
+      if (!roomNumber) {
+        showAlert('warning', 'Please enter a room number');
+        return;
+      }
+
+      try {
+        await handleApiCall('/api/rooms', 'POST', { room_number: roomNumber });
+        document.getElementById('newRoom').value = '';
+        loadRooms();
+        showAlert('success', 'Room added successfully');
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    async function loadRooms() {
+      try {
+        const rooms = await handleApiCall('/api/rooms');
+        const list = document.getElementById('roomList');
+        list.innerHTML = rooms.map(room => `
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            ${room.room_number}
+            <button class="btn btn-sm btn-danger" onclick="deleteRoom(${room.id})">
+              Delete
+            </button>
+          </li>
+        `).join('');
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    async function deleteRoom(id) {
+      if (!confirm('Are you sure you want to delete this room?')) return;
+      
+      try {
+        await handleApiCall(`/api/rooms/${id}`, 'DELETE');
+        loadRooms();
+        showAlert('success', 'Room deleted successfully');
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    // ========== BATCH MANAGEMENT ==========
+    function updateSelectedTeachers() {
+      const selected = Array.from(
+        document.querySelectorAll('#teacherDropdownContent input[type="checkbox"]:checked')
+      );
+      const container = document.getElementById('selectedTeachers');
+      
+      container.innerHTML = selected.length > 0 
+        ? selected.map(cb => `
+            <span class="selected-teacher">
+              ${cb.nextSibling.textContent.trim()}
+            </span>
+          `).join('')
+        : '<em>No teachers selected</em>';
+      
+      document.getElementById('teacherDropdownBtn').textContent = 
+        `${selected.length} teacher(s) selected`;
+    }
+
+    function updateSelectedDays() {
+      const selected = Array.from(
+        document.querySelectorAll('#daysCheckboxes input[type="checkbox"]:checked')
+      );
+      const container = document.getElementById('selectedDays');
+      
+      container.innerHTML = selected.length > 0 
+        ? selected.map(cb => `
+            <span class="selected-day">
+              ${cb.value}
+            </span>
+          `).join('')
+        : '<em>No days selected</em>';
+    }
+
+    async function loadBatchFormDropdowns() {
+      try {
+        const [courses, timeframes, rooms, teachers] = await Promise.all([
+          handleApiCall('/api/courses'),
+          handleApiCall('/api/timeframes'),
+          handleApiCall('/api/rooms'),
+          handleApiCall('/api/teachers')
+        ]);
+
+        // Populate course dropdown
+        document.getElementById('batchCourse').innerHTML = courses
+          .filter(c => c.active)
+          .map(c => `<option value="${c.id}">${c.name}</option>`)
+          .join('');
+
+        // Populate timeframe dropdown
+        document.getElementById('batchTimeframe').innerHTML = timeframes
+          .map(t => `<option value="${t.id}">${t.timeframe}</option>`)
+          .join('');
+
+        // Populate room dropdown
+        document.getElementById('batchRoom').innerHTML = rooms
+          .map(r => `<option value="${r.id}">${r.room_number}</option>`)
+          .join('');
+
+        // Populate teacher checkboxes
+        document.getElementById('teacherDropdownContent').innerHTML = teachers
+          .map(t => `
+            <label class="d-block">
+              <input type="checkbox" value="${t.id}" onchange="updateSelectedTeachers()"> ${t.name}
+            </label>
+          `).join('');
+          
+        updateSelectedTeachers();
+        updateSelectedDays();
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    async function addOrUpdateBatch() {
+      const courseId = document.getElementById('batchCourse').value;
+      const timeframeId = document.getElementById('batchTimeframe').value;
+      const roomId = document.getElementById('batchRoom').value;
+      const batchNumber = document.getElementById('batchNumber').value.trim();
+      const isActive = document.getElementById('batchActive').checked;
+
+      // Get selected days
+      const days = Array.from(
+        document.querySelectorAll('#daysCheckboxes input[type="checkbox"]:checked')
+      ).map(cb => cb.value);
+
+      // Get selected teachers
+      const teacherIds = Array.from(
+        document.querySelectorAll('#teacherDropdownContent input[type="checkbox"]:checked')
+      ).map(cb => parseInt(cb.value));
+
+      // Validation
+      if (!courseId || !timeframeId || !roomId || !batchNumber) {
+        showAlert('warning', 'Please fill all batch fields');
+        return;
+      }
+      
+      if (days.length === 0) {
+        showAlert('warning', 'Please select at least one day');
+        return;
+      }
+      
+      if (teacherIds.length === 0) {
+        showAlert('warning', 'Please select at least one teacher');
+        return;
+      }
+
+      const batchData = {
+        course_id: parseInt(courseId),
+        timeframe_id: parseInt(timeframeId),
+        room_id: parseInt(roomId),
+        batch_number: batchNumber,
+        days,
+        teacher_ids: teacherIds,
+        active: isActive
+      };
+
+      try {
+        if (editingBatchId) {
+          await handleApiCall(`/api/batches/${editingBatchId}`, 'PUT', batchData);
+          showAlert('success', 'Batch updated successfully');
+        } else {
+          const result = await handleApiCall('/api/batches', 'POST', batchData);
+          
+          // Check for conflict warning
+          if (result.error && result.error === "Schedule conflict") {
+            const conflictAlert = document.getElementById('conflictAlert');
+            conflictAlert.classList.remove('d-none');
+            conflictAlert.innerHTML = `
+              Conflict detected! Teacher ${result.details.teacher_id} is already assigned to 
+              Batch ${result.details.conflicting_batch} at ${result.details.timeframe}.
+              <button type="button" class="btn-close" onclick="this.parentElement.classList.add('d-none')"></button>
+            `;
+            return;
+          } else {
+            showAlert('success', 'Batch created successfully');
+          }
+        }
+        resetBatchForm();
+        loadBatches();
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    async function loadBatches() {
+      try {
+        const batches = await handleApiCall('/api/batches');
+        const list = document.getElementById('batchList');
+        list.innerHTML = batches.map(batch => `
+          <li class="list-group-item ${batch.active ? 'active-batch' : 'inactive-batch'}">
+            <div class="d-flex justify-content-between align-items-center">
+              <div>
+                <strong>${batch.course}</strong> - Batch ${batch.batch_number}<br>
+                <small>
+                  ${batch.timeframe} | ${batch.room} | 
+                  Days: ${batch.days.join(', ')} | 
+                  Teachers: ${batch.teacher_names.join(', ')}
+                </small>
+              </div>
+              <div class="batch-actions">
+                <label class="switch">
+                  <input type="checkbox" ${batch.active ? 'checked' : ''} 
+                         onchange="toggleBatchStatus(${batch.id}, this.checked)">
+                  <span class="slider"></span>
+                </label>
+                <button class="btn btn-sm btn-primary" onclick="editBatch(${batch.id})">
+                  Edit
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="deleteBatch(${batch.id})">
+                  Delete
+                </button>
+              </div>
+            </div>
+          </li>
+        `).join('');
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    async function toggleBatchStatus(batchId, isActive) {
+      try {
+        await handleApiCall(`/api/batches/${batchId}`, 'PUT', { active: isActive });
+        showAlert('success', `Batch ${isActive ? 'activated' : 'deactivated'} successfully`);
+        loadBatches();
+      } catch (error) {
+        // Error already handled
+        loadBatches(); // Refresh to show correct status
+      }
+    }
+
+    async function editBatch(batchId) {
+      try {
+        const batches = await handleApiCall('/api/batches');
+        const batch = batches.find(b => b.id === batchId);
+        
+        if (!batch) {
+          showAlert('warning', 'Batch not found');
+          return;
+        }
+
+        // Set form values
+        document.getElementById('batchCourse').value = batch.course_id;
+        document.getElementById('batchTimeframe').value = batch.timeframe_id;
+        document.getElementById('batchRoom').value = batch.room_id;
+        document.getElementById('batchNumber').value = batch.batch_number;
+        document.getElementById('batchActive').checked = batch.active;
+        document.getElementById('batchStatusText').textContent = batch.active ? 'Active' : 'Inactive';
+        document.getElementById('editingBatchId').value = batchId;
+        document.getElementById('batchActionButton').textContent = 'Update Batch';
+        
+        // Set days checkboxes
+        document.querySelectorAll('#daysCheckboxes input[type="checkbox"]').forEach(cb => {
+          cb.checked = batch.days.includes(cb.value);
+        });
+        
+        // Set teacher checkboxes
+        document.querySelectorAll('#teacherDropdownContent input[type="checkbox"]').forEach(cb => {
+          cb.checked = batch.teacher_ids.includes(parseInt(cb.value));
+        });
+        
+        // Update UI
+        updateSelectedTeachers();
+        updateSelectedDays();
+          
+        // Scroll to form
+        document.getElementById('batches').scrollIntoView({ behavior: 'smooth' });
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    function resetBatchForm() {
+      document.getElementById('batchNumber').value = '';
+      document.getElementById('batchActive').checked = true;
+      document.getElementById('batchStatusText').textContent = 'Active';
+      document.querySelectorAll('#daysCheckboxes input[type="checkbox"]').forEach(cb => {
+        cb.checked = false;
+      });
+      document.querySelectorAll('#teacherDropdownContent input[type="checkbox"]').forEach(cb => {
+        cb.checked = false;
+      });
+      document.getElementById('teacherDropdownBtn').textContent = 'Select Teachers';
+      document.getElementById('batchActionButton').textContent = 'Create Batch';
+      document.getElementById('editingBatchId').value = '';
+      document.getElementById('conflictAlert').classList.add('d-none');
+      updateSelectedTeachers();
+      updateSelectedDays();
+      editingBatchId = null;
+    }
+
+    async function deleteBatch(id) {
+      if (!confirm('Are you sure you want to delete this batch?')) return;
+      
+      try {
+        await handleApiCall(`/api/batches/${id}`, 'DELETE');
+        loadBatches();
+        showAlert('success', 'Batch deleted successfully');
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    // ========== DASHBOARD ==========
+    async function loadTimeframeDropdown() {
+      try {
+        const timeframes = await handleApiCall('/api/timeframes');
+        const select = document.getElementById('filterTimeframe');
+        select.innerHTML = timeframes.map(tf => 
+          `<option value="${tf.id}">${tf.timeframe}</option>`
+        ).join('');
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    async function loadDashboard() {
+      const day = document.getElementById('filterDay').value;
+      const timeframeId = document.getElementById('filterTimeframe').value;
+
+      if (!timeframeId) {
+        showAlert('warning', 'Please select a timeframe');
+        return;
+      }
+
+      try {
+        const results = await handleApiCall(`/api/dashboard?day=${day}&timeframe_id=${timeframeId}`);
+        
+        const container = document.getElementById('dashboardContent');
+        container.innerHTML = `
+          <div class="card mt-4">
+            <div class="card-body">
+              <h5>Schedule for ${day}</h5>
+              <div class="table-responsive">
+                <table class="table table-striped dashboard-table">
+                  <thead>
+                    <tr>
+                      <th>Teacher</th>
+                      <th>Status</th>
+                      <th>Course</th>
+                      <th>Batch</th>
+                      <th>Room</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${results.teachers.map(teacher => `
+                      <tr>
+                        <td data-label="Teacher">${teacher.teacher_name}</td>
+                        <td data-label="Status"><span class="${teacher.status === 'free' ? 'status-free' : 'status-busy'}">
+                          ${teacher.status === 'free' ? 'Free' : 'Busy'}
+                        </span></td>
+                        <td data-label="Course">${teacher.batches.length > 0 ? teacher.batches[0].course : '-'}</td>
+                        <td data-label="Batch">${teacher.batches.length > 0 ? teacher.batches[0].batch_number : '-'}</td>
+                        <td data-label="Room">${teacher.batches.length > 0 ? teacher.batches[0].room : '-'}</td>
+                      </tr>
+                    `).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        `;
+      } catch (error) {
+        // Error already handled
+      }
+    }
+
+    // ========== INITIALIZATION ==========
+    document.addEventListener('DOMContentLoaded', () => {
+      showPage('home');
+      
+      // Load initial data
+      loadTeachers();
+      loadCourses();
+      loadTimeframes();
+      loadRooms();
+      loadBatchFormDropdowns();
+    });
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
